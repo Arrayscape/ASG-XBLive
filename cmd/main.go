@@ -55,6 +55,13 @@ func main() {
 			os.Exit(1)
 		}
 		handleBatch(ctx, client, os.Args[2])
+	case "profile":
+		if len(os.Args) < 3 {
+			fmt.Fprintf(os.Stderr, "Error: gamertag required\n")
+			fmt.Fprintf(os.Stderr, "Usage: %s profile <gamertag>\n", os.Args[0])
+			os.Exit(1)
+		}
+		handleProfile(ctx, client, os.Args[2])
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", command)
 		printUsage()
@@ -70,6 +77,7 @@ func printUsage() {
 	fmt.Printf("  auth                    Authenticate with Xbox Live (device code flow)\n")
 	fmt.Printf("  logout                  Clear cached authentication tokens\n")
 	fmt.Printf("  lookup <gamertag>       Convert a gamertag to XUID\n")
+	fmt.Printf("  profile <gamertag>      Get full profile for a gamertag\n")
 	fmt.Printf("  batch <gt1,gt2,...>     Convert multiple gamertags to XUIDs\n\n")
 	fmt.Printf("Environment Variables:\n")
 	fmt.Printf("  XBLIVE_CLIENT_ID        Your Microsoft Entra ID application client ID (required)\n\n")
@@ -77,6 +85,7 @@ func printUsage() {
 	fmt.Printf("  export XBLIVE_CLIENT_ID='your-client-id'\n")
 	fmt.Printf("  %s auth\n", os.Args[0])
 	fmt.Printf("  %s lookup MajorNelson\n", os.Args[0])
+	fmt.Printf("  %s profile MajorNelson\n", os.Args[0])
 	fmt.Printf("  %s batch \"Player1,Player2,Player3\"\n", os.Args[0])
 }
 
@@ -110,6 +119,26 @@ func handleLookup(ctx context.Context, client *xblive.Client, gamertag string) {
 	fmt.Printf("\n✓ Found!\n")
 	fmt.Printf("  Gamertag: %s\n", gamertag)
 	fmt.Printf("  XUID:     %s\n", xuid)
+}
+
+func handleProfile(ctx context.Context, client *xblive.Client, gamertag string) {
+	fmt.Printf("Looking up profile for gamertag: %s\n", gamertag)
+
+	profile, err := client.LookupProfileByGamertag(ctx, gamertag)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Profile lookup failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("\n✓ Profile found!\n\n")
+
+	// Pretty print as JSON
+	output, err := json.MarshalIndent(profile, "", "  ")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to format profile: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println(string(output))
 }
 
 func handleBatch(ctx context.Context, client *xblive.Client, gamertagsStr string) {

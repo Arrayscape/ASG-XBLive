@@ -3,6 +3,7 @@ package xblive
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +16,8 @@ const (
 	// API endpoints
 	searchEndpoint = "https://peoplehub.xboxlive.com/users/me/people/search/decoration/detail,preferredColor"
 )
+
+var ErrNotFound = errors.New("not found")
 
 // Config contains configuration for the Xbox Live client
 type Config struct {
@@ -85,6 +88,28 @@ func (c *Client) GamertagToXUID(ctx context.Context, gamertag string) (string, e
 	return profiles[0].XUID, nil
 }
 
+// LookupProfileByGamertag returns the full profile for a given gamertag
+func (c *Client) LookupProfileByGamertag(ctx context.Context, gamertag string) (*Profile, error) {
+	if gamertag == "" {
+		return nil, fmt.Errorf("gamertag is required")
+	}
+
+	profiles, err := c.searchGamertags(ctx, []string{gamertag})
+	if err != nil {
+		return nil, err
+	}
+
+	if len(profiles) == 0 {
+		return nil, fmt.Errorf("gamertag '%s': %w", gamertag, ErrNotFound)
+	}
+
+	if len(profiles) > 1 {
+		return nil, fmt.Errorf("gamertag '%s' matched %d profiles", gamertag, len(profiles))
+	}
+
+	return profiles[0], nil
+}
+
 // GamertagsToXUIDs converts multiple gamertags to XUIDs (batch lookup)
 // Returns a map of gamertag -> XUID
 // Gamertags that are not found will not be in the result map
@@ -127,7 +152,7 @@ func (c *Client) GetProfile(ctx context.Context, xuid string) (*Profile, error) 
 }
 
 // searchGamertags searches for gamertags and returns their profiles
-func (c *Client) searchGamertags(ctx context.Context, gamertags []string) ([]Profile, error) {
+func (c *Client) searchGamertags(ctx context.Context, gamertags []string) ([]*Profile, error) {
 	// Ensure we have a valid XSTS token
 	xstsToken, userHash, err := c.ensureXSTSToken(ctx)
 	if err != nil {
@@ -136,7 +161,7 @@ func (c *Client) searchGamertags(ctx context.Context, gamertags []string) ([]Pro
 
 	// The search endpoint accepts a single query, so we'll need to make multiple requests
 	// for true batch support. For now, we'll search for each gamertag individually
-	var allProfiles []Profile
+	var allProfiles []*Profile
 
 	for _, gamertag := range gamertags {
 		// Build search URL

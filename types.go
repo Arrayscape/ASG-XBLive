@@ -76,7 +76,7 @@ type XSTSTokenDisplayClaims struct {
 
 // SearchResponse represents the response from people search endpoint
 type SearchResponse struct {
-	People []Profile `json:"people"`
+	People []*Profile `json:"people"`
 }
 
 // Profile represents an Xbox Live user profile
