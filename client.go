@@ -16,6 +16,16 @@ const (
 	searchEndpoint = "https://peoplehub.xboxlive.com/users/me/people/search/decoration/detail,preferredColor"
 )
 
+// Config contains configuration for the Xbox Live client
+type Config struct {
+	// ClientID is your Microsoft Entra ID application client ID (required)
+	ClientID string
+
+	// Cache is the token cache implementation to use (optional)
+	// If nil, defaults to file-based cache at ~/.xblive/tokens.json
+	Cache TokenCache
+}
+
 // Client is the main Xbox Live API client
 type Client struct {
 	clientID   string
@@ -23,29 +33,24 @@ type Client struct {
 	cache      TokenCache
 }
 
-// New creates a new Xbox Live client with the default file-based token cache
-// clientID should be your Microsoft Entra ID application client ID
-func New(clientID string) (*Client, error) {
-	cache, err := NewFileTokenCache()
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize token cache: %w", err)
-	}
-	return NewWithCache(clientID, cache)
-}
-
-// NewWithCache creates a new Xbox Live client with a custom token cache implementation
-// clientID should be your Microsoft Entra ID application client ID
-// cache is a custom TokenCache implementation
-func NewWithCache(clientID string, cache TokenCache) (*Client, error) {
-	if clientID == "" {
+// New creates a new Xbox Live client
+func New(config Config) (*Client, error) {
+	if config.ClientID == "" {
 		return nil, fmt.Errorf("client ID is required")
 	}
+
+	// Use provided cache or default to file cache
+	cache := config.Cache
 	if cache == nil {
-		return nil, fmt.Errorf("cache is required")
+		var err error
+		cache, err = NewFileTokenCache()
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize token cache: %w", err)
+		}
 	}
 
 	return &Client{
-		clientID:   clientID,
+		clientID:   config.ClientID,
 		httpClient: &http.Client{Timeout: 30 * time.Second},
 		cache:      cache,
 	}, nil
@@ -118,7 +123,7 @@ func (c *Client) GetProfile(ctx context.Context, xuid string) (*Profile, error) 
 	// For now, return an error indicating this needs to be implemented
 	// In a real implementation, you would use:
 	// GET https://profile.xboxlive.com/users/xuid({xuid})/profile/settings
-	return nil, fmt.Errorf("GetProfile by XUID not yet implemented - use gamertag search instead")
+	return nil, fmt.Errorf("GetProfile by XUID not yet implemented")
 }
 
 // searchGamertags searches for gamertags and returns their profiles

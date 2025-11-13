@@ -25,7 +25,9 @@ func main() {
 	}
 
 	// Create client
-	client, err := xblive.New(clientID)
+	client, err := xblive.New(xblive.Config{
+		ClientID: clientID,
+	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating client: %v\n", err)
 		os.Exit(1)

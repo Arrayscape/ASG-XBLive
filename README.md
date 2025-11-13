@@ -23,6 +23,7 @@ go get github.com/tadhunt/xblive
 You need to register an application in Microsoft Entra ID (formerly Azure AD):
 
 1. Go to the [Azure Portal](https://portal.azure.com/)
+    a. Create a free Azure account. You'll have to provide a CC
 2. Navigate to "Microsoft Entra ID" → "App registrations" → "New registration"
 3. Register your application:
    - Name: Choose any name (e.g., "Xbox Live Client")
@@ -30,10 +31,6 @@ You need to register an application in Microsoft Entra ID (formerly Azure AD):
    - Redirect URI: Select "Public client/native (mobile & desktop)" and enter `http://localhost`
 4. After registration, copy the **Application (client) ID**
 5. Go to "Authentication" → Enable "Allow public client flows" → Save
-6. Go to "API permissions" → "Add a permission" → "Xbox Live" → Add the following delegated permissions:
-   - `Xboxlive.signin`
-   - `Xboxlive.offline_access`
-7. Grant admin consent for these permissions
 
 ## Quick Start
 
@@ -51,8 +48,10 @@ import (
 )
 
 func main() {
-    // Create a new client with your Microsoft Entra ID client ID
-    client, err := xblive.New("your-client-id-here")
+    // Create a new client
+    client, err := xblive.New(xblive.Config{
+        ClientID: "your-client-id-here",
+    })
     if err != nil {
         log.Fatal(err)
     }
@@ -97,23 +96,33 @@ go run example/main.go logout
 ### Creating a Client
 
 ```go
-client, err := xblive.New(clientID)
+client, err := xblive.New(xblive.Config{
+    ClientID: "your-client-id",
+})
 ```
 
-Creates a new Xbox Live API client with the default file-based token cache. The `clientID` is your Microsoft Entra ID application client ID.
+Creates a new Xbox Live API client with the default file-based token cache.
+
+**Config options:**
+- `ClientID` (required) - Your Microsoft Entra ID application client ID
+- `Cache` (optional) - Custom `TokenCache` implementation (defaults to file-based cache at `~/.xblive/tokens.json`)
 
 ### Creating a Client with Custom Cache
 
 ```go
+// Custom cache location
 cache, err := xblive.NewFileTokenCacheWithPath("/custom/path/tokens.json")
 if err != nil {
     log.Fatal(err)
 }
 
-client, err := xblive.NewWithCache(clientID, cache)
+client, err := xblive.New(xblive.Config{
+    ClientID: "your-client-id",
+    Cache:    cache,
+})
 ```
 
-Creates a client with a custom cache location or implementation.
+Or implement your own `TokenCache` interface.
 
 ### Authentication
 
