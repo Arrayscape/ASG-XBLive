@@ -286,6 +286,13 @@ func (c *Client) getXSTSToken(ctx context.Context, userToken string) (*XSTSToken
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+
+		// Try to parse Xbox error response
+		var xboxErr XboxErrorResponse
+		if err := json.Unmarshal(body, &xboxErr); err == nil && xboxErr.XErr != 0 {
+			return nil, formatXboxError(xboxErr)
+		}
+
 		return nil, fmt.Errorf("XSTS token request failed: %s - %s", resp.Status, string(body))
 	}
 
@@ -295,6 +302,28 @@ func (c *Client) getXSTSToken(ctx context.Context, userToken string) (*XSTSToken
 	}
 
 	return &xstsToken, nil
+}
+
+// formatXboxError formats an Xbox error response into a user-friendly message
+func formatXboxError(err XboxErrorResponse) error {
+	switch err.XErr {
+	case 2148916233: // 0x8015DC0B
+		return fmt.Errorf("no Xbox account found: the Microsoft account you authenticated with doesn't have an Xbox Live profile. Create one at https://www.xbox.com/")
+	case 2148916235: // 0x8015DC0D
+		//lint:ignore ST1005 Xbox Live is a proper name
+		return fmt.Errorf("Xbox Live is not available in your country/region")
+	case 2148916236, 2148916237: // 0x8015DC0E, 0x8015DC0F
+		return fmt.Errorf("the account needs adult verification. Please verify your account at https://account.microsoft.com/")
+	case 2148916238: // 0x8015DC10
+		return fmt.Errorf("the account is a child account and cannot proceed unless the parent consents")
+	default:
+		if err.Message != "" {
+			//lint:ignore ST1005 Xbox is a proper name
+			return fmt.Errorf("Xbox error %d: %s", err.XErr, err.Message)
+		}
+		//lint:ignore ST1005 Xbox is a proper name
+		return fmt.Errorf("Xbox error code: %d (0x%X)", err.XErr, err.XErr)
+	}
 }
 
 // ensureXSTSToken ensures we have a valid XSTS token, refreshing if necessary

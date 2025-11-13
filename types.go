@@ -86,7 +86,7 @@ type Profile struct {
 	ModernGamertag       string `json:"modernGamertag"`
 	ModernGamertagSuffix string `json:"modernGamertagSuffix"`
 	UniqueModernGamertag string `json:"uniqueModernGamertag"`
-	GamerScore           int    `json:"gamerScore"`
+	GamerScore           string `json:"gamerScore"` // API returns as string
 	PresenceState        string `json:"presenceState"`
 	PresenceText         string `json:"presenceText"`
 	IsFavorite           bool   `json:"isFavorite"`
@@ -108,4 +108,12 @@ type CachedTokens struct {
 	XSTSToken         string    `json:"xsts_token"`
 	XSTSTokenExpiry   time.Time `json:"xsts_token_expiry"`
 	UserHash          string    `json:"user_hash"`
+}
+
+// XboxErrorResponse represents an error response from Xbox services
+type XboxErrorResponse struct {
+	Identity string `json:"Identity"`
+	XErr     int64  `json:"XErr"`
+	Message  string `json:"Message"`
+	Redirect string `json:"Redirect"`
 }

@@ -8,26 +8,45 @@ import (
 	"time"
 )
 
-// TokenCache manages cached authentication tokens
-type TokenCache struct {
+// TokenCache is an interface for managing cached authentication tokens
+type TokenCache interface {
+	GetAccessToken() (string, bool)
+	GetRefreshToken() (string, bool)
+	GetUserToken() (string, bool)
+	GetXSTSToken() (token string, userHash string, ok bool)
+	SetAccessToken(token string, expiresIn int) error
+	SetRefreshToken(token string) error
+	SetUserToken(token string, notAfter time.Time) error
+	SetXSTSToken(token string, userHash string, notAfter time.Time) error
+	Clear() error
+}
+
+// FileTokenCache is a file-based implementation of TokenCache
+type FileTokenCache struct {
 	filePath string
 	tokens   *CachedTokens
 }
 
-// NewTokenCache creates a new token cache
-func NewTokenCache() (*TokenCache, error) {
+// NewFileTokenCache creates a new file-based token cache in the default location (~/.xblive/tokens.json)
+func NewFileTokenCache() (*FileTokenCache, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get home directory: %w", err)
 	}
 
 	cacheDir := filepath.Join(homeDir, ".xblive")
+	filePath := filepath.Join(cacheDir, "tokens.json")
+	return NewFileTokenCacheWithPath(filePath)
+}
+
+// NewFileTokenCacheWithPath creates a new file-based token cache at a custom path
+func NewFileTokenCacheWithPath(filePath string) (*FileTokenCache, error) {
+	cacheDir := filepath.Dir(filePath)
 	if err := os.MkdirAll(cacheDir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create cache directory: %w", err)
 	}
 
-	filePath := filepath.Join(cacheDir, "tokens.json")
-	cache := &TokenCache{
+	cache := &FileTokenCache{
 		filePath: filePath,
 		tokens:   &CachedTokens{},
 	}
@@ -39,7 +58,7 @@ func NewTokenCache() (*TokenCache, error) {
 }
 
 // load reads tokens from disk
-func (c *TokenCache) load() error {
+func (c *FileTokenCache) load() error {
 	data, err := os.ReadFile(c.filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -56,7 +75,7 @@ func (c *TokenCache) load() error {
 }
 
 // save writes tokens to disk
-func (c *TokenCache) save() error {
+func (c *FileTokenCache) save() error {
 	data, err := json.MarshalIndent(c.tokens, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal tokens: %w", err)
@@ -70,7 +89,7 @@ func (c *TokenCache) save() error {
 }
 
 // GetAccessToken returns the cached access token if valid
-func (c *TokenCache) GetAccessToken() (string, bool) {
+func (c *FileTokenCache) GetAccessToken() (string, bool) {
 	if c.tokens.AccessToken == "" {
 		return "", false
 	}
@@ -81,7 +100,7 @@ func (c *TokenCache) GetAccessToken() (string, bool) {
 }
 
 // GetRefreshToken returns the cached refresh token
-func (c *TokenCache) GetRefreshToken() (string, bool) {
+func (c *FileTokenCache) GetRefreshToken() (string, bool) {
 	if c.tokens.RefreshToken == "" {
 		return "", false
 	}
@@ -89,7 +108,7 @@ func (c *TokenCache) GetRefreshToken() (string, bool) {
 }
 
 // GetUserToken returns the cached user token if valid
-func (c *TokenCache) GetUserToken() (string, bool) {
+func (c *FileTokenCache) GetUserToken() (string, bool) {
 	if c.tokens.UserToken == "" {
 		return "", false
 	}
@@ -100,7 +119,7 @@ func (c *TokenCache) GetUserToken() (string, bool) {
 }
 
 // GetXSTSToken returns the cached XSTS token and user hash if valid
-func (c *TokenCache) GetXSTSToken() (token string, userHash string, ok bool) {
+func (c *FileTokenCache) GetXSTSToken() (token string, userHash string, ok bool) {
 	if c.tokens.XSTSToken == "" || c.tokens.UserHash == "" {
 		return "", "", false
 	}
@@ -111,27 +130,27 @@ func (c *TokenCache) GetXSTSToken() (token string, userHash string, ok bool) {
 }
 
 // SetAccessToken stores the access token
-func (c *TokenCache) SetAccessToken(token string, expiresIn int) error {
+func (c *FileTokenCache) SetAccessToken(token string, expiresIn int) error {
 	c.tokens.AccessToken = token
 	c.tokens.AccessTokenExpiry = time.Now().Add(time.Duration(expiresIn) * time.Second)
 	return c.save()
 }
 
 // SetRefreshToken stores the refresh token
-func (c *TokenCache) SetRefreshToken(token string) error {
+func (c *FileTokenCache) SetRefreshToken(token string) error {
 	c.tokens.RefreshToken = token
 	return c.save()
 }
 
 // SetUserToken stores the user token
-func (c *TokenCache) SetUserToken(token string, notAfter time.Time) error {
+func (c *FileTokenCache) SetUserToken(token string, notAfter time.Time) error {
 	c.tokens.UserToken = token
 	c.tokens.UserTokenExpiry = notAfter
 	return c.save()
 }
 
 // SetXSTSToken stores the XSTS token and user hash
-func (c *TokenCache) SetXSTSToken(token string, userHash string, notAfter time.Time) error {
+func (c *FileTokenCache) SetXSTSToken(token string, userHash string, notAfter time.Time) error {
 	c.tokens.XSTSToken = token
 	c.tokens.UserHash = userHash
 	c.tokens.XSTSTokenExpiry = notAfter
@@ -139,7 +158,7 @@ func (c *TokenCache) SetXSTSToken(token string, userHash string, notAfter time.T
 }
 
 // Clear removes all cached tokens
-func (c *TokenCache) Clear() error {
+func (c *FileTokenCache) Clear() error {
 	c.tokens = &CachedTokens{}
 	if err := os.Remove(c.filePath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to remove token cache: %w", err)

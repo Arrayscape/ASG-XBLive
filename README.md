@@ -100,7 +100,20 @@ go run example/main.go logout
 client, err := xblive.New(clientID)
 ```
 
-Creates a new Xbox Live API client. The `clientID` is your Microsoft Entra ID application client ID.
+Creates a new Xbox Live API client with the default file-based token cache. The `clientID` is your Microsoft Entra ID application client ID.
+
+### Creating a Client with Custom Cache
+
+```go
+cache, err := xblive.NewFileTokenCacheWithPath("/custom/path/tokens.json")
+if err != nil {
+    log.Fatal(err)
+}
+
+client, err := xblive.NewWithCache(clientID, cache)
+```
+
+Creates a client with a custom cache location or implementation.
 
 ### Authentication
 
@@ -176,6 +189,8 @@ The library returns descriptive errors for common scenarios:
 
 ## Token Cache
 
+### Default File-Based Cache
+
 Tokens are stored in `~/.xblive/tokens.json` with the following structure:
 
 - Access token (Microsoft)
@@ -185,6 +200,30 @@ Tokens are stored in `~/.xblive/tokens.json` with the following structure:
 - User hash
 
 The cache file is created with `0600` permissions (owner read/write only) for security.
+
+### Custom Cache Implementations
+
+You can implement your own token cache by implementing the `TokenCache` interface:
+
+```go
+type TokenCache interface {
+    GetAccessToken() (string, bool)
+    GetRefreshToken() (string, bool)
+    GetUserToken() (string, bool)
+    GetXSTSToken() (token string, userHash string, ok bool)
+    SetAccessToken(token string, expiresIn int) error
+    SetRefreshToken(token string) error
+    SetUserToken(token string, notAfter time.Time) error
+    SetXSTSToken(token string, userHash string, notAfter time.Time) error
+    Clear() error
+}
+```
+
+Example use cases:
+- Store tokens in a database
+- Use an in-memory cache for testing
+- Integrate with a secrets management system
+- Implement custom encryption
 
 ## References
 

@@ -20,19 +20,28 @@ const (
 type Client struct {
 	clientID   string
 	httpClient *http.Client
-	cache      *TokenCache
+	cache      TokenCache
 }
 
-// New creates a new Xbox Live client
+// New creates a new Xbox Live client with the default file-based token cache
 // clientID should be your Microsoft Entra ID application client ID
 func New(clientID string) (*Client, error) {
+	cache, err := NewFileTokenCache()
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize token cache: %w", err)
+	}
+	return NewWithCache(clientID, cache)
+}
+
+// NewWithCache creates a new Xbox Live client with a custom token cache implementation
+// clientID should be your Microsoft Entra ID application client ID
+// cache is a custom TokenCache implementation
+func NewWithCache(clientID string, cache TokenCache) (*Client, error) {
 	if clientID == "" {
 		return nil, fmt.Errorf("client ID is required")
 	}
-
-	cache, err := NewTokenCache()
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize token cache: %w", err)
+	if cache == nil {
+		return nil, fmt.Errorf("cache is required")
 	}
 
 	return &Client{
