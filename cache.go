@@ -14,7 +14,7 @@ type TokenCache interface {
 	GetRefreshToken() (string, bool)
 	GetUserToken() (string, bool)
 	GetXSTSToken() (token string, userHash string, ok bool)
-	SetAccessToken(token string, expiresIn int) error
+	SetAccessToken(token string, notAfter time.Time) error
 	SetRefreshToken(token string) error
 	SetUserToken(token string, notAfter time.Time) error
 	SetXSTSToken(token string, userHash string, notAfter time.Time) error
@@ -130,9 +130,9 @@ func (c *FileTokenCache) GetXSTSToken() (token string, userHash string, ok bool)
 }
 
 // SetAccessToken stores the access token
-func (c *FileTokenCache) SetAccessToken(token string, expiresIn int) error {
+func (c *FileTokenCache) SetAccessToken(token string, notAfter time.Time) error {
 	c.tokens.AccessToken = token
-	c.tokens.AccessTokenExpiry = time.Now().Add(time.Duration(expiresIn) * time.Second)
+	c.tokens.AccessTokenExpiry = notAfter
 	return c.save()
 }
 

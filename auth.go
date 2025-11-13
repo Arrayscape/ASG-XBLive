@@ -49,7 +49,8 @@ func (c *Client) authenticateDeviceCode(ctx context.Context) error {
 	}
 
 	// Cache the tokens
-	if err := c.cache.SetAccessToken(token.AccessToken, token.ExpiresIn); err != nil {
+	notAfter := time.Now().Add(time.Duration(token.ExpiresIn) * time.Second)
+	if err := c.cache.SetAccessToken(token.AccessToken, notAfter); err != nil {
 		return fmt.Errorf("failed to cache access token: %w", err)
 	}
 	if err := c.cache.SetRefreshToken(token.RefreshToken); err != nil {
@@ -200,7 +201,8 @@ func (c *Client) refreshAccessToken(ctx context.Context) error {
 	}
 
 	// Cache the new tokens
-	if err := c.cache.SetAccessToken(token.AccessToken, token.ExpiresIn); err != nil {
+	notAfter := time.Now().Add(time.Duration(token.ExpiresIn) * time.Second)
+	if err := c.cache.SetAccessToken(token.AccessToken, notAfter); err != nil {
 		return err
 	}
 	if token.RefreshToken != "" {
