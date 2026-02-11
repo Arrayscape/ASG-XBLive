@@ -126,6 +126,13 @@ type CachedTokens struct {
 	XSTSToken         string    `json:"xsts_token"`
 	XSTSTokenExpiry   time.Time `json:"xsts_token_expiry"`
 	UserHash          string    `json:"user_hash"`
+
+	// Minecraft-specific tokens (uses different XSTS relying party)
+	MinecraftXSTSToken       string    `json:"minecraft_xsts_token"`
+	MinecraftXSTSTokenExpiry time.Time `json:"minecraft_xsts_token_expiry"`
+	MinecraftUserHash        string    `json:"minecraft_user_hash"`
+	MinecraftToken           string    `json:"minecraft_token"`
+	MinecraftTokenExpiry     time.Time `json:"minecraft_token_expiry"`
 }
 
 // XboxErrorResponse represents an error response from Xbox services

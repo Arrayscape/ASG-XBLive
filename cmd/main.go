@@ -39,6 +39,8 @@ func main() {
 	switch command {
 	case "auth":
 		handleAuth(ctx, client)
+	case "mc-auth":
+		handleMinecraftAuth(ctx, client)
 	case "logout":
 		handleLogout(ctx, client)
 	case "lookup":
@@ -75,6 +77,7 @@ func printUsage() {
 	fmt.Printf("  %s <command> [arguments]\n\n", os.Args[0])
 	fmt.Printf("Commands:\n")
 	fmt.Printf("  auth                    Authenticate with Xbox Live (device code flow)\n")
+	fmt.Printf("  mc-auth                 Authenticate with Minecraft Java Edition\n")
 	fmt.Printf("  logout                  Clear cached authentication tokens\n")
 	fmt.Printf("  lookup <gamertag>       Convert a gamertag to XUID\n")
 	fmt.Printf("  profile <gamertag>      Get full profile for a gamertag\n")
@@ -97,6 +100,30 @@ func handleAuth(ctx context.Context, client *xblive.Client) {
 	}
 	fmt.Printf("✓ Successfully authenticated!\n")
 	fmt.Printf("Tokens cached. You can now use lookup commands.\n")
+}
+
+func handleMinecraftAuth(ctx context.Context, client *xblive.Client) {
+	fmt.Printf("Starting Minecraft Java Edition authentication...\n")
+
+	auth, err := client.GetMinecraftJavaAuth(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Minecraft authentication failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("\n✓ Successfully authenticated with Minecraft!\n\n")
+	fmt.Printf("Profile:\n")
+	fmt.Printf("  Username: %s\n", auth.Profile.Name)
+	fmt.Printf("  UUID:     %s\n", auth.Profile.ID)
+
+	if len(auth.Entitlements.Items) > 0 {
+		fmt.Printf("\nEntitlements:\n")
+		for _, e := range auth.Entitlements.Items {
+			fmt.Printf("  - %s (%s)\n", e.Name, e.Source)
+		}
+	}
+
+	fmt.Printf("\nToken (first 20 chars): %s...\n", auth.Token[:20])
 }
 
 func handleLogout(ctx context.Context, client *xblive.Client) {

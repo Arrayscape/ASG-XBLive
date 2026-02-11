@@ -20,6 +20,12 @@ type TokenCache interface {
 	SetUserToken(ctx context.Context, token string, notAfter time.Time) error
 	SetXSTSToken(ctx context.Context, token string, userHash string, notAfter time.Time) error
 	Clear(ctx context.Context) error
+
+	// Minecraft-specific token methods
+	GetMinecraftXSTSToken(ctx context.Context) (token string, userHash string, ok bool)
+	SetMinecraftXSTSToken(ctx context.Context, token string, userHash string, notAfter time.Time) error
+	GetMinecraftToken(ctx context.Context) (token string, ok bool)
+	SetMinecraftToken(ctx context.Context, token string, expiresIn int) error
 }
 
 // FileTokenCache is a file-based implementation of TokenCache
@@ -165,4 +171,41 @@ func (c *FileTokenCache) Clear(ctx context.Context) error {
 		return fmt.Errorf("failed to remove token cache: %w", err)
 	}
 	return nil
+}
+
+// GetMinecraftXSTSToken returns the cached Minecraft XSTS token and user hash if valid
+func (c *FileTokenCache) GetMinecraftXSTSToken(ctx context.Context) (token string, userHash string, ok bool) {
+	if c.tokens.MinecraftXSTSToken == "" || c.tokens.MinecraftUserHash == "" {
+		return "", "", false
+	}
+	if time.Now().After(c.tokens.MinecraftXSTSTokenExpiry) {
+		return "", "", false
+	}
+	return c.tokens.MinecraftXSTSToken, c.tokens.MinecraftUserHash, true
+}
+
+// SetMinecraftXSTSToken stores the Minecraft XSTS token and user hash
+func (c *FileTokenCache) SetMinecraftXSTSToken(ctx context.Context, token string, userHash string, notAfter time.Time) error {
+	c.tokens.MinecraftXSTSToken = token
+	c.tokens.MinecraftUserHash = userHash
+	c.tokens.MinecraftXSTSTokenExpiry = notAfter
+	return c.save()
+}
+
+// GetMinecraftToken returns the cached Minecraft access token if valid
+func (c *FileTokenCache) GetMinecraftToken(ctx context.Context) (token string, ok bool) {
+	if c.tokens.MinecraftToken == "" {
+		return "", false
+	}
+	if time.Now().After(c.tokens.MinecraftTokenExpiry) {
+		return "", false
+	}
+	return c.tokens.MinecraftToken, true
+}
+
+// SetMinecraftToken stores the Minecraft access token
+func (c *FileTokenCache) SetMinecraftToken(ctx context.Context, token string, expiresIn int) error {
+	c.tokens.MinecraftToken = token
+	c.tokens.MinecraftTokenExpiry = time.Now().Add(time.Duration(expiresIn) * time.Second)
+	return c.save()
 }

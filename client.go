@@ -22,13 +22,18 @@ type Config struct {
 	// Cache is the token cache implementation to use (optional)
 	// If nil, defaults to file-based cache at ~/.xblive/tokens.json
 	Cache TokenCache
+
+	// DeviceCodeCallback is called with device code info during authentication (optional)
+	// If nil, device code info is printed to stdout
+	DeviceCodeCallback func(DeviceCodeResponse)
 }
 
 // Client is the main Xbox Live API client
 type Client struct {
-	clientID   string
-	httpClient *http.Client
-	cache      TokenCache
+	clientID           string
+	httpClient         *http.Client
+	cache              TokenCache
+	deviceCodeCallback func(DeviceCodeResponse)
 }
 
 // New creates a new Xbox Live client
@@ -48,9 +53,10 @@ func New(config Config) (*Client, error) {
 	}
 
 	return &Client{
-		clientID:   config.ClientID,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
-		cache:      cache,
+		clientID:           config.ClientID,
+		httpClient:         &http.Client{Timeout: 30 * time.Second},
+		cache:              cache,
+		deviceCodeCallback: config.DeviceCodeCallback,
 	}, nil
 }
 

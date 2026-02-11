@@ -33,14 +33,18 @@ func (c *Client) authenticateDeviceCode(ctx context.Context) error {
 		return fmt.Errorf("failed to request device code: %w", err)
 	}
 
-	// Display instructions to user
-	fmt.Printf("\n")
-	fmt.Printf("To sign in, use a web browser to open the page:\n")
-	fmt.Printf("    %s\n", deviceCode.VerificationURI)
-	fmt.Printf("\n")
-	fmt.Printf("And enter the code:\n")
-	fmt.Printf("    %s\n", deviceCode.UserCode)
-	fmt.Printf("\n")
+	// Notify caller of device code via callback or print to stdout
+	if c.deviceCodeCallback != nil {
+		c.deviceCodeCallback(*deviceCode)
+	} else {
+		fmt.Printf("\n")
+		fmt.Printf("To sign in, use a web browser to open the page:\n")
+		fmt.Printf("    %s\n", deviceCode.VerificationURI)
+		fmt.Printf("\n")
+		fmt.Printf("And enter the code:\n")
+		fmt.Printf("    %s\n", deviceCode.UserCode)
+		fmt.Printf("\n")
+	}
 
 	// Step 2: Poll for token
 	token, err := c.pollForToken(ctx, deviceCode)
@@ -57,7 +61,9 @@ func (c *Client) authenticateDeviceCode(ctx context.Context) error {
 		return fmt.Errorf("failed to cache refresh token: %w", err)
 	}
 
-	fmt.Printf("Authentication successful!\n\n")
+	if c.deviceCodeCallback == nil {
+		fmt.Printf("Authentication successful!\n\n")
+	}
 	return nil
 }
 
