@@ -13,17 +13,46 @@ import (
 )
 
 const (
-	// OAuth endpoints
-	deviceCodeEndpoint = "https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode"
-	tokenEndpoint      = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token"
+	// MSAL OAuth endpoints (Microsoft Entra ID / Azure AD)
+	msalDeviceCodeEndpoint = "https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode"
+	msalTokenEndpoint      = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token"
+
+	// Live OAuth endpoints (Xbox Live / login.live.com)
+	liveDeviceCodeEndpoint = "https://login.live.com/oauth20_connect.srf"
+	liveTokenEndpoint      = "https://login.live.com/oauth20_token.srf"
 
 	// Xbox endpoints
 	userAuthEndpoint = "https://user.auth.xboxlive.com/user/authenticate"
 	xstsAuthEndpoint = "https://xsts.auth.xboxlive.com/xsts/authorize"
 
 	// OAuth scopes
-	scopes = "Xboxlive.signin Xboxlive.offline_access"
+	msalScopes = "Xboxlive.signin Xboxlive.offline_access"
+	liveScopes = "service::user.auth.xboxlive.com::MBI_SSL"
 )
+
+// getDeviceCodeEndpoint returns the device code endpoint for the configured auth flow
+func (c *Client) getDeviceCodeEndpoint() string {
+	if c.authFlow == AuthFlowLive {
+		return liveDeviceCodeEndpoint
+	}
+	return msalDeviceCodeEndpoint
+}
+
+// getTokenEndpoint returns the token endpoint for the configured auth flow
+func (c *Client) getTokenEndpoint() string {
+	if c.authFlow == AuthFlowLive {
+		return liveTokenEndpoint
+	}
+	return msalTokenEndpoint
+}
+
+// getScopes returns the OAuth scopes for the configured auth flow
+func (c *Client) getScopes() string {
+	if c.authFlow == AuthFlowLive {
+		return liveScopes
+	}
+	return msalScopes
+}
 
 // authenticateDeviceCode performs the device code OAuth flow
 func (c *Client) authenticateDeviceCode(ctx context.Context) error {
@@ -71,9 +100,12 @@ func (c *Client) authenticateDeviceCode(ctx context.Context) error {
 func (c *Client) requestDeviceCode(ctx context.Context) (*DeviceCodeResponse, error) {
 	data := url.Values{}
 	data.Set("client_id", c.clientID)
-	data.Set("scope", scopes)
+	data.Set("scope", c.getScopes())
+	if c.authFlow == AuthFlowLive {
+		data.Set("response_type", "device_code")
+	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", deviceCodeEndpoint, strings.NewReader(data.Encode()))
+	req, err := http.NewRequestWithContext(ctx, "POST", c.getDeviceCodeEndpoint(), strings.NewReader(data.Encode()))
 	if err != nil {
 		return nil, err
 	}
@@ -133,9 +165,15 @@ func (c *Client) pollForToken(ctx context.Context, deviceCode *DeviceCodeRespons
 // tryGetToken attempts to exchange the device code for an access token
 func (c *Client) tryGetToken(ctx context.Context, deviceCode string) (*TokenResponse, error) {
 	data := url.Values{}
-	data.Set("grant_type", "urn:ietf:params:oauth:grant-type:device_code")
 	data.Set("client_id", c.clientID)
 	data.Set("device_code", deviceCode)
+	data.Set("grant_type", "urn:ietf:params:oauth:grant-type:device_code")
+
+	tokenEndpoint := c.getTokenEndpoint()
+	// Live flow requires client_id as query parameter too
+	if c.authFlow == AuthFlowLive {
+		tokenEndpoint = tokenEndpoint + "?client_id=" + c.clientID
+	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", tokenEndpoint, strings.NewReader(data.Encode()))
 	if err != nil {
@@ -182,9 +220,9 @@ func (c *Client) refreshAccessToken(ctx context.Context) error {
 	data.Set("grant_type", "refresh_token")
 	data.Set("client_id", c.clientID)
 	data.Set("refresh_token", refreshToken)
-	data.Set("scope", scopes)
+	data.Set("scope", c.getScopes())
 
-	req, err := http.NewRequestWithContext(ctx, "POST", tokenEndpoint, strings.NewReader(data.Encode()))
+	req, err := http.NewRequestWithContext(ctx, "POST", c.getTokenEndpoint(), strings.NewReader(data.Encode()))
 	if err != nil {
 		return err
 	}
@@ -222,13 +260,19 @@ func (c *Client) refreshAccessToken(ctx context.Context) error {
 
 // getXboxUserToken exchanges the Microsoft access token for an Xbox user token
 func (c *Client) getXboxUserToken(ctx context.Context, accessToken string) (*XboxUserTokenResponse, error) {
+	// Live flow uses "t=" prefix, MSAL uses "d=" prefix
+	rpsTicketPrefix := "d="
+	if c.authFlow == AuthFlowLive {
+		rpsTicketPrefix = "t="
+	}
+
 	reqBody := XboxUserTokenRequest{
 		RelyingParty: "http://auth.xboxlive.com",
 		TokenType:    "JWT",
 		Properties: XboxUserTokenRequestProperties{
 			AuthMethod: "RPS",
 			SiteName:   "user.auth.xboxlive.com",
-			RpsTicket:  "d=" + accessToken,
+			RpsTicket:  rpsTicketPrefix + accessToken,
 		},
 	}
 

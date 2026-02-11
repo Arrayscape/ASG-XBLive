@@ -24,9 +24,19 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Get auth flow from environment variable (optional, defaults to "msal")
+	var authFlow xblive.AuthFlow
+	switch strings.ToLower(os.Getenv("XBLIVE_AUTH_FLOW")) {
+	case "live":
+		authFlow = xblive.AuthFlowLive
+	default:
+		authFlow = xblive.AuthFlowMSAL
+	}
+
 	// Create client
 	client, err := xblive.New(xblive.Config{
 		ClientID: clientID,
+		AuthFlow: authFlow,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating client: %v\n", err)
@@ -83,9 +93,13 @@ func printUsage() {
 	fmt.Printf("  profile <gamertag>      Get full profile for a gamertag\n")
 	fmt.Printf("  batch <gt1,gt2,...>     Convert multiple gamertags to XUIDs\n\n")
 	fmt.Printf("Environment Variables:\n")
-	fmt.Printf("  XBLIVE_CLIENT_ID        Your Microsoft Entra ID application client ID (required)\n\n")
+	fmt.Printf("  XBLIVE_CLIENT_ID        Your Microsoft Entra ID application client ID (required)\n")
+	fmt.Printf("  XBLIVE_AUTH_FLOW        OAuth flow: 'msal' (default) or 'live' (for console client IDs)\n\n")
 	fmt.Printf("Examples:\n")
 	fmt.Printf("  export XBLIVE_CLIENT_ID='your-client-id'\n")
+	fmt.Printf("  # For Nintendo Switch client ID, use the 'live' flow:\n")
+	fmt.Printf("  export XBLIVE_CLIENT_ID='00000000441cc96b'\n")
+	fmt.Printf("  export XBLIVE_AUTH_FLOW='live'\n")
 	fmt.Printf("  %s auth\n", os.Args[0])
 	fmt.Printf("  %s lookup MajorNelson\n", os.Args[0])
 	fmt.Printf("  %s profile MajorNelson\n", os.Args[0])

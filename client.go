@@ -14,6 +14,19 @@ import (
 
 var ErrNotFound = errors.New("not found")
 
+// AuthFlow specifies which OAuth endpoints to use for authentication
+type AuthFlow string
+
+const (
+	// AuthFlowMSAL uses Microsoft Entra ID (login.microsoftonline.com) endpoints
+	// This is the default and works with most registered app client IDs
+	AuthFlowMSAL AuthFlow = "msal"
+
+	// AuthFlowLive uses Xbox Live (login.live.com) endpoints
+	// This is required for console client IDs like MinecraftNintendoSwitch
+	AuthFlowLive AuthFlow = "live"
+)
+
 // Config contains configuration for the Xbox Live client
 type Config struct {
 	// ClientID is your Microsoft Entra ID application client ID (required)
@@ -26,6 +39,10 @@ type Config struct {
 	// DeviceCodeCallback is called with device code info during authentication (optional)
 	// If nil, device code info is printed to stdout
 	DeviceCodeCallback func(DeviceCodeResponse)
+
+	// AuthFlow specifies which OAuth endpoints to use (optional)
+	// Defaults to AuthFlowMSAL. Use AuthFlowLive for console client IDs like MinecraftNintendoSwitch
+	AuthFlow AuthFlow
 }
 
 // Client is the main Xbox Live API client
@@ -34,6 +51,7 @@ type Client struct {
 	httpClient         *http.Client
 	cache              TokenCache
 	deviceCodeCallback func(DeviceCodeResponse)
+	authFlow           AuthFlow
 }
 
 // New creates a new Xbox Live client
@@ -52,11 +70,18 @@ func New(config Config) (*Client, error) {
 		}
 	}
 
+	// Default to MSAL flow if not specified
+	authFlow := config.AuthFlow
+	if authFlow == "" {
+		authFlow = AuthFlowMSAL
+	}
+
 	return &Client{
 		clientID:           config.ClientID,
 		httpClient:         &http.Client{Timeout: 30 * time.Second},
 		cache:              cache,
 		deviceCodeCallback: config.DeviceCodeCallback,
+		authFlow:           authFlow,
 	}, nil
 }
 
