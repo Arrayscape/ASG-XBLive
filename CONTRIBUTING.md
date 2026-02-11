@@ -6,7 +6,7 @@ It is the work of contributors like you. We appreciate your help!
 
 # Contributing 
 
-Please join the [asg-xblive mailing list](https://groups.google.com/a/arrayscape.com/g/asg-xblive)
+Please join the [asg-xblive mailing list](https://groups.google.com/a/arrayscape.com/g/asg-xblive).
 
 Please read the Contribution Guidelines in
 [CONTRIBUTING.md](CONTRIBUTING.md) before sending patches.
