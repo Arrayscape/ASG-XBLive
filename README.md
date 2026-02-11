@@ -14,7 +14,7 @@ A Go client library for the Xbox Live API that converts gamertags to XUIDs, retr
 ## Installation
 
 ```bash
-go get github.com/tadhunt/xblive
+go get github.com/Arrayscape/asg-xblive
 ```
 
 ## Prerequisites
@@ -77,7 +77,7 @@ import (
     "fmt"
     "log"
 
-    "github.com/tadhunt/xblive"
+    "github.com/Arrayscape/asg-xblive"
 )
 
 func main() {

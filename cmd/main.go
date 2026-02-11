@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/tadhunt/xblive"
+	"github.com/Arrayscape/asg-xblive"
 )
 
 func main() {

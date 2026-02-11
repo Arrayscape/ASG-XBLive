@@ -1,3 +1,3 @@
-module github.com/tadhunt/xblive
+module github.com/Arrayscape/asg-xblive
 
 go 1.21
