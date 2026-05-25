@@ -54,10 +54,12 @@ func (c *Client) getScopes() string {
 	return msalScopes
 }
 
-// authenticateDeviceCode performs the device code OAuth flow
+// authenticateDeviceCode performs the device code OAuth flow inline, blocking
+// until the user completes the flow in their browser (or the device code
+// expires). Built on top of the public StartDeviceCodeFlow + PollDeviceCode
+// primitives so blocking and stateless callers share the same wire protocol.
 func (c *Client) authenticateDeviceCode(ctx context.Context) error {
-	// Step 1: Request device code
-	deviceCode, err := c.requestDeviceCode(ctx)
+	deviceCode, err := c.StartDeviceCodeFlow(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to request device code: %w", err)
 	}
@@ -75,25 +77,46 @@ func (c *Client) authenticateDeviceCode(ctx context.Context) error {
 		fmt.Printf("\n")
 	}
 
-	// Step 2: Poll for token
-	token, err := c.pollForToken(ctx, deviceCode)
-	if err != nil {
-		return fmt.Errorf("failed to obtain token: %w", err)
+	// Poll until the user completes the flow upstream, the code expires, or
+	// the user declines. Honors the server-supplied Interval (with a small
+	// floor to defend against a zero/negative value).
+	interval := time.Duration(deviceCode.Interval) * time.Second
+	if interval < time.Second {
+		interval = 5 * time.Second
 	}
+	deadline := time.Now().Add(time.Duration(deviceCode.ExpiresIn) * time.Second)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
 
-	// Cache the tokens
-	notAfter := time.Now().Add(time.Duration(token.ExpiresIn) * time.Second)
-	if err := c.cache.SetAccessToken(ctx, token.AccessToken, notAfter); err != nil {
-		return fmt.Errorf("failed to cache access token: %w", err)
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			if time.Now().After(deadline) {
+				return fmt.Errorf("device code expired")
+			}
+			result, err := c.PollDeviceCode(ctx, deviceCode.DeviceCode)
+			if err != nil {
+				return fmt.Errorf("poll device code: %w", err)
+			}
+			switch result {
+			case PollResultSuccess:
+				if c.deviceCodeCallback == nil {
+					fmt.Printf("Authentication successful!\n\n")
+				}
+				return nil
+			case PollResultPending:
+				// Keep polling.
+			case PollResultExpired:
+				return fmt.Errorf("device code expired")
+			case PollResultDeclined:
+				return fmt.Errorf("user declined authorization")
+			default:
+				return fmt.Errorf("unexpected poll result %v", result)
+			}
+		}
 	}
-	if err := c.cache.SetRefreshToken(ctx, token.RefreshToken); err != nil {
-		return fmt.Errorf("failed to cache refresh token: %w", err)
-	}
-
-	if c.deviceCodeCallback == nil {
-		fmt.Printf("Authentication successful!\n\n")
-	}
-	return nil
 }
 
 // requestDeviceCode requests a device code from Microsoft
@@ -130,40 +153,114 @@ func (c *Client) requestDeviceCode(ctx context.Context) (*DeviceCodeResponse, er
 	return &deviceCode, nil
 }
 
-// pollForToken polls the token endpoint until the user completes authentication
-func (c *Client) pollForToken(ctx context.Context, deviceCode *DeviceCodeResponse) (*TokenResponse, error) {
-	interval := time.Duration(deviceCode.Interval) * time.Second
-	timeout := time.Duration(deviceCode.ExpiresIn) * time.Second
-	deadline := time.Now().Add(timeout)
+// StartDeviceCodeFlow requests a fresh device code from Microsoft and returns
+// it. The caller is responsible for displaying UserCode + VerificationURI to
+// the user, and for driving PollDeviceCode until completion. No state is
+// retained on the Client between calls — the returned DeviceCodeResponse
+// carries everything the caller needs to persist across requests (the
+// stateless, multi-replica-safe usage pattern).
+//
+// To continue using the blocking flow, call Authenticate() instead; it's
+// built on top of this primitive.
+func (c *Client) StartDeviceCodeFlow(ctx context.Context) (*DeviceCodeResponse, error) {
+	return c.requestDeviceCode(ctx)
+}
 
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+// PollResult is the outcome of a single PollDeviceCode call. The terminal
+// values are Success, Expired, and Declined; Pending means the caller should
+// wait (at least DeviceCodeResponse.Interval seconds) and try again.
+type PollResult int
 
-	for {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-ticker.C:
-			if time.Now().After(deadline) {
-				return nil, fmt.Errorf("device code expired")
-			}
+const (
+	// PollResultPending: the user hasn't completed the flow upstream yet.
+	// Wait and poll again. Returned for the OAuth "authorization_pending"
+	// and "slow_down" error codes (caller may want to increase its poll
+	// interval on slow_down).
+	PollResultPending PollResult = iota
 
-			token, err := c.tryGetToken(ctx, deviceCode.DeviceCode)
-			if err != nil {
-				// Check if it's a "pending" error (user hasn't completed auth yet)
-				if strings.Contains(err.Error(), "authorization_pending") {
-					continue // Keep polling
-				}
-				return nil, err
-			}
+	// PollResultSuccess: the user completed the flow and the access/refresh
+	// tokens have been written to the client's cache. Caller can proceed
+	// with the usual token-derivation flow (GetMinecraftJavaAuth, etc.).
+	PollResultSuccess
 
-			return token, nil
-		}
+	// PollResultExpired: the device code expired before the user completed
+	// the flow. Caller must restart with a new StartDeviceCodeFlow.
+	PollResultExpired
+
+	// PollResultDeclined: the user explicitly denied consent at the
+	// verification URI. Caller must restart with a new StartDeviceCodeFlow.
+	PollResultDeclined
+)
+
+// String returns a human-readable name for the result. Useful for logs.
+func (r PollResult) String() string {
+	switch r {
+	case PollResultPending:
+		return "pending"
+	case PollResultSuccess:
+		return "success"
+	case PollResultExpired:
+		return "expired"
+	case PollResultDeclined:
+		return "declined"
+	default:
+		return fmt.Sprintf("PollResult(%d)", int(r))
 	}
 }
 
-// tryGetToken attempts to exchange the device code for an access token
-func (c *Client) tryGetToken(ctx context.Context, deviceCode string) (*TokenResponse, error) {
+// PollDeviceCode attempts a single token exchange for the given device code.
+// Idempotent and stateless — safe to call across requests or processes (the
+// device code is the only context needed). On PollResultSuccess, the access
+// and refresh tokens are persisted to the client's cache.
+//
+// Transient transport errors (network, parse) are returned as a non-nil
+// error and the caller should retry. OAuth-level negative responses are
+// surfaced via the PollResult enum, not as errors.
+func (c *Client) PollDeviceCode(ctx context.Context, deviceCode string) (PollResult, error) {
+	token, oauthErr, err := c.tryGetTokenOAuth(ctx, deviceCode)
+	if err != nil {
+		return PollResultPending, err
+	}
+	if oauthErr != "" {
+		switch oauthErr {
+		case "authorization_pending", "slow_down":
+			return PollResultPending, nil
+		case "expired_token", "code_expired":
+			return PollResultExpired, nil
+		case "access_denied", "authorization_declined":
+			return PollResultDeclined, nil
+		default:
+			// Unknown OAuth error — bubble as transport error so the caller
+			// can decide whether to retry or surface to the operator.
+			return PollResultPending, fmt.Errorf("oauth error: %s", oauthErr)
+		}
+	}
+
+	// Success. Persist tokens for the rest of the xblive flow.
+	notAfter := time.Now().Add(time.Duration(token.ExpiresIn) * time.Second)
+	if err := c.cache.SetAccessToken(ctx, token.AccessToken, notAfter); err != nil {
+		return PollResultPending, fmt.Errorf("cache access token: %w", err)
+	}
+	if err := c.cache.SetRefreshToken(ctx, token.RefreshToken); err != nil {
+		return PollResultPending, fmt.Errorf("cache refresh token: %w", err)
+	}
+	return PollResultSuccess, nil
+}
+
+// tryGetTokenOAuth attempts to exchange a device code for an access token.
+//
+// Returns one of three states (only one is set):
+//   - token != nil, oauthErr == "", err == nil           → success
+//   - token == nil, oauthErr != "", err == nil           → OAuth-level negative
+//     response (e.g. "authorization_pending", "expired_token", "access_denied").
+//     Caller maps these to PollResult values.
+//   - token == nil, oauthErr == "", err != nil           → transport/parse failure.
+//     Caller should treat as transient and retry.
+//
+// Separating oauthErr from err lets callers distinguish "the upstream
+// protocol said no" from "the request never reached the upstream" without
+// string-matching error messages.
+func (c *Client) tryGetTokenOAuth(ctx context.Context, deviceCode string) (*TokenResponse, string, error) {
 	data := url.Values{}
 	data.Set("client_id", c.clientID)
 	data.Set("device_code", deviceCode)
@@ -177,36 +274,34 @@ func (c *Client) tryGetToken(ctx context.Context, deviceCode string) (*TokenResp
 
 	req, err := http.NewRequestWithContext(ctx, "POST", tokenEndpoint, strings.NewReader(data.Encode()))
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
-		// Parse error response
 		var errorResp struct {
 			Error            string `json:"error"`
 			ErrorDescription string `json:"error_description"`
 		}
-		if err := json.Unmarshal(body, &errorResp); err == nil {
-			return nil, fmt.Errorf("%s: %s", errorResp.Error, errorResp.ErrorDescription)
+		if err := json.Unmarshal(body, &errorResp); err == nil && errorResp.Error != "" {
+			return nil, errorResp.Error, nil
 		}
-		return nil, fmt.Errorf("token request failed: %s - %s", resp.Status, string(body))
+		return nil, "", fmt.Errorf("token request failed: %s - %s", resp.Status, string(body))
 	}
 
 	var token TokenResponse
 	if err := json.Unmarshal(body, &token); err != nil {
-		return nil, err
+		return nil, "", err
 	}
-
-	return &token, nil
+	return &token, "", nil
 }
 
 // refreshAccessToken refreshes the access token using the refresh token
